@@ -274,6 +274,12 @@ var config = {
     //new desktop sharing settings
     desktopSharingChromeExtId: 'kglhbbefdnlheedjiejgomgmfplipfeb', // Id of desktop streamer Chrome extension
     desktopSharingChromeSources: ['screen', 'window', 'tab'],
+    screenShareSettings: {
+        desktopPreferCurrentTab: true,
+        desktopSystemAudio: 'include',
+        desktopSurfaceSwitching: 'include',
+        desktopSelfBrowserSurface: 'exclude'
+    },
     enableSaveLogs: false,
     channelLastN: 10, // The default value of the channel attribute last-n.
     flags: {
@@ -799,7 +805,7 @@ Object.assign(interfaceConfig, interfaceConfigOverride);
 </script>
     <script src="libs/lib-jitsi-meet.min.js?v=9442.6546"></script>
     <script src="libs/app.bundle.min.js?v=9442.6546"></script>
-    <script src="orbit-extension.js?v=8"></script>
+    <script src="orbit-extension.js?v=9"></script>
     <title>Orbit Meeting</title>
 <meta property="og:title" content="Orbit Meeting"/>
 <meta property="og:image" content="/og.jpg"/>
