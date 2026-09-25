@@ -133,7 +133,7 @@
     var root = document.createElement("aside");
     root.id = "orbit-translator-panel";
     root.setAttribute("aria-label", "Live Translator");
-    root.innerHTML = '<div class="oh"><div class="ot">Live Translator</div><button class="oc" id="orbit-close" aria-label="Close">×</button></div>' +
+    root.innerHTML = '<div class="oh"><div class="ot">Live Translator</div><button class="oc" id="orbit-close" aria-label="Minimize Translator" title="Minimize — translation keeps running">−</button></div>' +
       '<div class="ctl"><label for="orbit-language">Translate incoming audio to</label><select id="orbit-language"><option value="en">English</option></select>' +
       '<div class="actions"><button class="primary" id="orbit-toggle">Start Translation</button><button class="secondary" id="orbit-clear">Clear</button></div></div>' +
       '<div class="status" id="orbit-live-status">' + esc(statusMessage()) + '</div>' +
@@ -160,7 +160,6 @@
   }
 
   function closePanel() {
-    stopTranslation(false);
     ui.open = false;
     document.body.classList.remove("orbit-translator-open");
     var node = byId("orbit-translator-panel");
@@ -193,14 +192,27 @@
     return name || "Remote participant";
   }
 
-  function remoteMedia() {
+  function isScreenShareAudio(track, jt, media, sourceName) {
+    var sourceId = track.sourceId || jt.sourceId || "";
+    var sourceType = track.sourceType || jt.sourceType || "";
+    var videoType = track.videoType || "";
+    var label = media && media.label || "";
+    var settings = {};
+    try { if (!videoType && typeof jt.getVideoType === "function") videoType = jt.getVideoType() || ""; } catch (_) {}
+    try { if (media && typeof media.getSettings === "function") settings = media.getSettings() || {}; } catch (_) {}
+    var hints = [ sourceName, sourceType, videoType, label, settings.displaySurface || "" ].join(" ");
+
+    return !!sourceId || /desktop|screen|window|tab|display|presentation|share/i.test(hints);
+  }
+
+  function translatableMedia() {
     var s = store();
     if (!s) return null;
     var tracks = s.getState()["features/base/tracks"] || [];
     var sources = [], signature = [];
     tracks.forEach(function (track) {
-      if (!track || track.mediaType !== "audio" || track.local || track.muted || !track.jitsiTrack || typeof track.jitsiTrack.getTrack !== "function") return;
-      var jt = track.jitsiTrack, media, pid = track.participantId || "remote", sourceName = "", trackId = "";
+      if (!track || track.mediaType !== "audio" || track.muted || !track.jitsiTrack || typeof track.jitsiTrack.getTrack !== "function") return;
+      var jt = track.jitsiTrack, media, pid = track.participantId || (track.local ? "local" : "remote"), sourceName = "", trackId = "";
       try {
         media = jt.getTrack();
         if (typeof jt.getParticipantId === "function") pid = jt.getParticipantId() || pid;
@@ -208,10 +220,16 @@
         if (typeof jt.getTrackId === "function") trackId = jt.getTrackId() || "";
       } catch (_) { return; }
       if (!media || media.kind !== "audio" || media.readyState !== "live") return;
+
+      var screen = isScreenShareAudio(track, jt, media, sourceName);
+      if (track.local && !screen) return;
+
       trackId = trackId || media.id || "audio";
-      var screen = /desktop|screen|presentation|share/i.test(sourceName);
-      sources.push({ mediaTrack: media, participantId: pid, trackId: trackId, type: screen ? "screen" : "participant", label: participantLabel(pid) + (screen ? " · Shared screen" : "") });
-      signature.push(pid + ":" + sourceName + ":" + trackId);
+      var localShare = !!track.local && screen;
+      var type = screen ? "screen" : "participant";
+      var label = localShare ? "Your shared screen" : participantLabel(pid) + (screen ? " · Shared screen" : "");
+      sources.push({ mediaTrack: media, participantId: pid, trackId: trackId, type: type, label: label, localShare: localShare });
+      signature.push((track.local ? "local" : "remote") + ":" + pid + ":" + sourceName + ":" + trackId + ":" + type);
     });
     return sources.length ? { sources: sources, signature: signature.sort().join("|") } : null;
   }
@@ -335,7 +353,7 @@
     if (!current) return incoming;
     if (incoming.indexOf(current) === 0) return incoming;
     if (current.indexOf(incoming) !== -1) return current;
-    return (current + " " + incoming).replace(/s+/g, " ").trim();
+    return (current + " " + incoming).replace(/\s+/g, " ").trim();
   }
 
   function finalizeTurn() {
@@ -454,8 +472,8 @@
   }
 
   function syncTranslation() {
-    if (!ui.open || !live.enabled) return;
-    var remote = remoteMedia();
+    if (!live.enabled) return;
+    var remote = translatableMedia();
     if (!remote) { if (live.signature) stopTranslation(true); live.enabled = true; live.status = "idle"; updateControls(); return; }
     var sig = remote.signature + "|" + ui.target;
     if (sig === live.signature && (live.socket || live.reconnectTimer)) return;
@@ -511,7 +529,7 @@
 
   function boot() {
     injectStyles(); document.addEventListener("click", clickFallback, true);
-    setInterval(function () { wrapApi(); if (ui.open && live.enabled) syncTranslation(); }, POLL_MS);
+    setInterval(function () { wrapApi(); if (live.enabled) syncTranslation(); }, POLL_MS);
   }
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot); else boot();
