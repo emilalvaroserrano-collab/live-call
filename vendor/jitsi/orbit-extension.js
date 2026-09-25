@@ -35,7 +35,11 @@
     token: "",
     model: "",
     sessionHandle: "",
-    mediaSources: []
+    mediaSources: [],
+    displayAudioTracks: [],
+    pcmPending: new Float32Array(0),
+    displayCaptureSeen: false,
+    displayCaptureHasAudio: false
   };
 
   function store() { return window.APP && window.APP.store; }
@@ -102,7 +106,7 @@
     if (live.status === "connecting") return "Connecting live translator…";
     if (live.status === "listening") return "Listening to incoming meeting audio.";
     if (live.status === "playing") return "Playing translated audio.";
-    if (live.enabled) return "Waiting for incoming participant audio.";
+    if (live.enabled) return "Waiting for incoming participant or shared-screen audio.";
     return "Choose a language and start translation.";
   }
 
@@ -192,6 +196,51 @@
     return name || "Remote participant";
   }
 
+  function pruneDisplayAudioTracks() {
+    live.displayAudioTracks = live.displayAudioTracks.filter(function (item) {
+      return item && item.mediaTrack && item.mediaTrack.readyState === "live";
+    });
+  }
+
+  function rememberDisplayStream(stream) {
+    if (!stream || typeof stream.getAudioTracks !== "function") return;
+    var sharedAudioTracks = stream.getAudioTracks();
+    live.displayCaptureSeen = true;
+    live.displayCaptureHasAudio = sharedAudioTracks.length > 0;
+    if (!sharedAudioTracks.length && live.enabled) showError("Screen sharing started without an audio track. In the browser share dialog, enable Share tab audio / Share system audio.");
+    sharedAudioTracks.forEach(function (media) {
+      if (!media || media.readyState !== "live") return;
+      var id = media.id || "display-audio";
+      if (live.displayAudioTracks.some(function (item) { return item.id === id || item.mediaTrack === media; })) return;
+      var item = { id: id, mediaTrack: media, participantId: "local", type: "screen", label: "Your shared screen", localShare: true };
+      live.displayAudioTracks.push(item);
+      try {
+        media.addEventListener("ended", function () {
+          live.displayAudioTracks = live.displayAudioTracks.filter(function (x) { return x.mediaTrack !== media; });
+          if (live.enabled) syncTranslation();
+        }, { once: true });
+      } catch (_) {}
+    });
+    if (live.enabled) setTimeout(syncTranslation, 0);
+  }
+
+  function installDisplayCaptureTap() {
+    function wrap(owner, key) {
+      if (!owner || typeof owner[key] !== "function" || owner[key].orbitTranslatorWrapped) return;
+      var original = owner[key].bind(owner);
+      var wrapped = function (constraints) {
+        return original(constraints).then(function (stream) {
+          rememberDisplayStream(stream);
+          return stream;
+        });
+      };
+      wrapped.orbitTranslatorWrapped = true;
+      try { owner[key] = wrapped; } catch (_) {}
+    }
+    wrap(navigator.mediaDevices, "getDisplayMedia");
+    wrap(navigator, "getDisplayMedia");
+  }
+
   function isScreenShareAudio(track, jt, media, sourceName) {
     var sourceId = track.sourceId || jt.sourceId || "";
     var sourceType = track.sourceType || jt.sourceType || "";
@@ -200,16 +249,25 @@
     var settings = {};
     try { if (!videoType && typeof jt.getVideoType === "function") videoType = jt.getVideoType() || ""; } catch (_) {}
     try { if (media && typeof media.getSettings === "function") settings = media.getSettings() || {}; } catch (_) {}
-    var hints = [ sourceName, sourceType, videoType, label, settings.displaySurface || "" ].join(" ");
-
-    return !!sourceId || /desktop|screen|window|tab|display|presentation|share/i.test(hints);
+    return !!sourceId || /desktop|screen|window|tab|display|presentation|share/i.test([ sourceName, sourceType, videoType, label, settings.displaySurface || "" ].join(" "));
   }
 
   function translatableMedia() {
     var s = store();
-    if (!s) return null;
-    var tracks = s.getState()["features/base/tracks"] || [];
-    var sources = [], signature = [];
+    var tracks = s && s.getState()["features/base/tracks"] || [];
+    var sources = [], signature = [], seen = {}, localMicIds = {};
+
+    pruneDisplayAudioTracks();
+    live.displayAudioTracks.forEach(function (item) {
+      var media = item.mediaTrack;
+      if (!media || media.readyState !== "live") return;
+      var id = media.id || item.id || "display-audio";
+      if (seen[id]) return;
+      seen[id] = true;
+      sources.push(item);
+      signature.push("local-display:" + id);
+    });
+
     tracks.forEach(function (track) {
       if (!track || track.mediaType !== "audio" || track.muted || !track.jitsiTrack || typeof track.jitsiTrack.getTrack !== "function") return;
       var jt = track.jitsiTrack, media, pid = track.participantId || (track.local ? "local" : "remote"), sourceName = "", trackId = "";
@@ -220,17 +278,38 @@
         if (typeof jt.getTrackId === "function") trackId = jt.getTrackId() || "";
       } catch (_) { return; }
       if (!media || media.kind !== "audio" || media.readyState !== "live") return;
-
-      var screen = isScreenShareAudio(track, jt, media, sourceName);
-      if (track.local && !screen) return;
-
       trackId = trackId || media.id || "audio";
+      var screen = isScreenShareAudio(track, jt, media, sourceName);
+
+      if (track.local && !screen) {
+        localMicIds[media.id || trackId] = true;
+        return;
+      }
+      if (seen[media.id || trackId]) return;
+      seen[media.id || trackId] = true;
+
       var localShare = !!track.local && screen;
       var type = screen ? "screen" : "participant";
       var label = localShare ? "Your shared screen" : participantLabel(pid) + (screen ? " · Shared screen" : "");
       sources.push({ mediaTrack: media, participantId: pid, trackId: trackId, type: type, label: label, localShare: localShare });
       signature.push((track.local ? "local" : "remote") + ":" + pid + ":" + sourceName + ":" + trackId + ":" + type);
     });
+
+    document.querySelectorAll("audio,video").forEach(function (node, index) {
+      var stream = node.srcObject;
+      if (!stream && typeof node.captureStream === "function" && node.src && !node.paused) {
+        try { stream = node.captureStream(); } catch (_) { stream = null; }
+      }
+      if (!stream || typeof stream.getAudioTracks !== "function") return;
+      stream.getAudioTracks().forEach(function (media) {
+        var id = media && media.id || "";
+        if (!media || media.readyState !== "live" || localMicIds[id] || seen[id]) return;
+        seen[id] = true;
+        sources.push({ mediaTrack: media, participantId: "meeting-media", trackId: id || ("dom-" + index), type: "screen", label: "Shared media" });
+        signature.push("dom:" + (id || index));
+      });
+    });
+
     return sources.length ? { sources: sources, signature: signature.sort().join("|") } : null;
   }
 
@@ -273,6 +352,7 @@
     live.analysers.forEach(function (x) { try { x.node.disconnect(); } catch (_) {} });
     live.processor = live.mixer = null;
     live.sources = []; live.analysers = [];
+    live.pcmPending = new Float32Array(0);
   }
 
   function closeSocket() {
@@ -336,6 +416,23 @@
     return out;
   }
 
+  function sendPcmChunk(ws, pcm) {
+    if (!ws || ws.readyState !== 1 || !pcm || !pcm.length) return;
+    ws.send(JSON.stringify({ realtimeInput: { audio: { data: floatToPcm64(pcm), mimeType: "audio/pcm;rate=16000" } } }));
+  }
+
+  function queuePcm(ws, pcm) {
+    var pending = live.pcmPending || new Float32Array(0);
+    var merged = new Float32Array(pending.length + pcm.length);
+    merged.set(pending, 0); merged.set(pcm, pending.length);
+    var offset = 0, chunkSamples = 1600;
+    while (merged.length - offset >= chunkSamples) {
+      sendPcmChunk(ws, merged.subarray(offset, offset + chunkSamples));
+      offset += chunkSamples;
+    }
+    live.pcmPending = offset < merged.length ? merged.slice(offset) : new Float32Array(0);
+  }
+
   function activeSource() {
     var best = null, bestLevel = 0;
     live.analysers.forEach(function (item) {
@@ -396,14 +493,14 @@
         var analyser = live.input.createAnalyser(); analyser.fftSize = 256; source.connect(analyser); analyser.connect(mixer);
         live.sources.push(source); live.analysers.push({ node: analyser, data: new Uint8Array(analyser.fftSize), source: remote });
       });
-      var processor = live.input.createScriptProcessor(1024, 1, 1);
+      var processor = live.input.createScriptProcessor(2048, 1, 1);
       processor.onaudioprocess = function (event) {
         event.outputBuffer.getChannelData(0).fill(0);
         var ws = live.socket;
         if (generation !== live.generation || !live.enabled || !ws || ws.readyState !== 1 || ws.bufferedAmount > 512 * 1024) return;
         live.speaker = activeSource() || live.speaker;
         var pcm = downsample(event.inputBuffer.getChannelData(0), live.input.sampleRate);
-        ws.send(JSON.stringify({ realtimeInput: { audio: { data: floatToPcm64(pcm), mimeType: "audio/pcm;rate=16000" } } }));
+        queuePcm(ws, pcm);
       };
       mixer.connect(processor); processor.connect(live.input.destination);
       live.mixer = mixer; live.processor = processor;
@@ -433,7 +530,7 @@
       if (generation !== live.generation || live.socket !== ws || !live.enabled) return;
       ws.send(JSON.stringify({ setup: {
         model: live.model.indexOf("models/") === 0 ? live.model : "models/" + live.model,
-        generationConfig: { responseModalities: ["AUDIO"], inputAudioTranscription: {}, outputAudioTranscription: {}, translationConfig: { targetLanguageCode: ui.target, echoTargetLanguage: false } },
+        generationConfig: { responseModalities: ["AUDIO"], inputAudioTranscription: {}, outputAudioTranscription: {}, translationConfig: { targetLanguageCode: ui.target, echoTargetLanguage: true } },
         sessionResumption: resumeHandle ? { handle: resumeHandle } : {},
         contextWindowCompression: { slidingWindow: {} }
       } }));
@@ -528,7 +625,7 @@
   }
 
   function boot() {
-    injectStyles(); document.addEventListener("click", clickFallback, true);
+    injectStyles(); installDisplayCaptureTap(); document.addEventListener("click", clickFallback, true);
     setInterval(function () { wrapApi(); if (live.enabled) syncTranslation(); }, POLL_MS);
   }
 
