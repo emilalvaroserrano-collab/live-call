@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
+  <meta name="theme-color" content="#0a0a0b" />
+  <base href="/" />
+  <link rel="icon" href="/images/favicon.svg" />
+  <link rel="stylesheet" href="/css/all.css?v=9442.6546" />
+  <title>Orbit Meeting</title>
+  <script>
+    var config = {
+      hosts: {
+        domain: 'meet.ffmuc.net',
+        muc: 'conference.meet.ffmuc.net',
+        focus: 'focus.meet.ffmuc.net'
+      },
+      bridgeChannel: { preferSctp: true },
+      enableP2P: true,
+      p2p: { enabled: true, codecPreferenceOrder: [ 'AV1', 'VP9', 'VP8', 'H264' ], mobileCodecPreferenceOrder: [ 'VP8', 'H264', 'VP9', 'AV1' ], useStunTurn: true },
+      bosh: window.location.origin + '/http-bind',
+      preferBosh: true,
+      websocket: (window.location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + window.location.host + '/xmpp-websocket',
+      disableInitialGUM: true,
+      enableInsecureRoomNameWarning: false,
+      enableIceRestart: true,
+      enableIceRestartOnNetworkChange: true,
+      disableAudioLevels: false,
+      flags: { sourceNameSignaling: true, sendMultipleVideoStreams: true, receiveMultipleVideoStreams: true },
+      constraints: { video: { height: { ideal: 720, max: 720, min: 180 }, width: { ideal: 1280, max: 1280, min: 320 }, frameRate: { max: 30 } } },
+      mainToolbarButtons: [[ 'microphone', 'camera', 'desktop', 'chat', 'raisehand', 'participants-pane', 'orbit-translator', 'orbit-donate' ]],
+      buttonsWithNotifyClick: [
+        { key: 'orbit-translator', preventExecution: false },
+        { key: 'orbit-donate', preventExecution: false }
+      ],
+      customToolbarButtons: [
+        { id: 'orbit-translator', text: 'Translator', icon: '/images/orbit-translator.svg' },
+        { id: 'orbit-donate', text: 'Donate', icon: '/images/orbit-donate.svg' }
+      ],
+      audioTranslation: { enabled: false, duckedVolume: 0.15, enableSendingChangeEvents: true },
+      transcription: { enabled: false, translationEnabled: false, disableClosedCaptions: true },
+      enableTalkWhileMuted: true,
+      enableNoAudioDetection: true,
+      enableNoisyMicDetection: true,
+      enableClosePage: true,
+      prejoinConfig: { enabled: true },
+      requireDisplayName: false,
+      disableDeepLinking: true,
+      analytics: { disabled: true }
+    };
+    var interfaceConfig = {
+      APP_NAME: 'Orbit Meeting',
+      NATIVE_APP_NAME: 'Orbit Meeting',
+      PROVIDER_NAME: 'Orbit',
+      DEFAULT_LOGO_URL: '/images/watermark.svg',
+      DEFAULT_WELCOME_PAGE_LOGO_URL: '/images/watermark.svg',
+      JITSI_WATERMARK_LINK: '',
+      MOBILE_APP_PROMO: false,
+      SHOW_CHROME_EXTENSION_BANNER: false,
+      SHOW_PROMOTIONAL_CLOSE_PAGE: false,
+      SHOW_JITSI_WATERMARK: true,
+      SHOW_WATERMARK_FOR_GUESTS: true
+    };
+  </script>
+  <script src="/libs/lib-jitsi-meet.min.js?v=9442.6546"></script>
+  <script src="/libs/app.bundle.min.js?v=9442.6546"></script>
+  <script src="/orbit-extension.js?v=5"></script>
+</head>
+<body>
+  <noscript>JavaScript is required to use Orbit Meeting.</noscript>
+  <div id="react" role="main"></div>
+</body>
+</html>
