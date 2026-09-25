@@ -62,9 +62,22 @@
       SHOW_WATERMARK_FOR_GUESTS: true
     };
   </script>
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      if (!window.JitsiMeetJS || !JitsiMeetJS.app || !JitsiMeetJS.app.entryPoints) {
+        console.error('[Orbit] Jitsi application bootstrap is unavailable.');
+        return;
+      }
+
+      JitsiMeetJS.app.renderEntryPoint({
+        Component: JitsiMeetJS.app.entryPoints.APP
+      });
+    });
+  </script>
+  <script src="/libs/preload.min.js?v=9442.6546"></script>
   <script src="/libs/lib-jitsi-meet.min.js?v=9442.6546"></script>
   <script src="/libs/app.bundle.min.js?v=9442.6546"></script>
-  <script src="/orbit-extension.js?v=5"></script>
+  <script src="/orbit-extension.js?v=6"></script>
 </head>
 <body>
   <noscript>JavaScript is required to use Orbit Meeting.</noscript>
