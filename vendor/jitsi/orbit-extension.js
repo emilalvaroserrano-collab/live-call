@@ -417,7 +417,7 @@
       if (c.inputTranscription && c.inputTranscription.text) { live.speaker = live.speaker || activeSource(); live.sourceText = mergeText(live.sourceText, c.inputTranscription.text); scheduleFinalize(); renderTranscript(); }
       if (c.outputTranscription && c.outputTranscription.text) { live.speaker = live.speaker || activeSource(); live.translatedText = mergeText(live.translatedText, c.outputTranscription.text); scheduleFinalize(); renderTranscript(); }
       var parts = c.modelTurn && c.modelTurn.parts || [];
-      parts.forEach(function (part) { if (part && part.inlineData && part.inlineData.data && /^audio\\//.test(part.inlineData.mimeType || "")) playPcm(b64bytes(part.inlineData.data)); });
+      parts.forEach(function (part) { if (part && part.inlineData && part.inlineData.data && /^audio\//.test(part.inlineData.mimeType || "")) playPcm(b64bytes(part.inlineData.data)); });
       if (c.turnComplete) { if (live.finalizeTimer) clearTimeout(live.finalizeTimer); live.finalizeTimer = null; finalizeTurn(); live.status = "listening"; setStatus(); }
     };
     ws.onerror = function () { if (generation === live.generation && live.enabled) { live.status = "connecting"; setStatus(); } };
