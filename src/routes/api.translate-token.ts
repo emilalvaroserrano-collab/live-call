@@ -40,7 +40,7 @@ export const Route = createFileRoute("/api/translate-token")({
                   outputAudioTranscription: {},
                   translationConfig: {
                     targetLanguageCode: body.targetLanguageCode,
-                    echoTargetLanguage: true,
+                    echoTargetLanguage: false,
                   },
                   sessionResumption: {},
                   contextWindowCompression: { slidingWindow: {} },
